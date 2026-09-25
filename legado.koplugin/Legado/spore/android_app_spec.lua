@@ -3,6 +3,13 @@ return {
     name = "android_app",
     version = "0.2",
     methods = {
+        login = {
+            path = "/auth/login",
+            method = "POST",
+            payload = {"user", "password"},
+            required_params = {"user", "password"},
+            expected_status = {200}
+        },
         getChapterList = {
             path = "/getChapterList",
             method = "GET",

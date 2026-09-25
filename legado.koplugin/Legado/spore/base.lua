@@ -83,11 +83,14 @@ function M:init()
     end
     self.client = Spore.new_from_lua(_spec, { base_url = self.settings.server_address .. '/' })
     self._need_login = H.is_func(self.client.login) and (self.settings.reader3_un or "") ~= ""
-    
+    -- 类型1 (android_app) 的凭据走服务端内置账号: POST /auth/login → ?token=<token>
+    self._use_server_token = (self.name == "android_app")
+
     if self._need_login then
         self.tokenManager = AuthToken:new(self.name)
         package.loaded["Spore.Middleware.Legado3Auth"] = require("Legado.spore.Middleware.Legado3Auth")
     end
+    package.loaded["Spore.Middleware.ServerToken"] = require("Legado.spore.Middleware.ServerToken")
     package.loaded["Spore.Middleware.FixJSON"] = require("Legado.spore.Middleware.FixJSON")
     package.loaded["Spore.Middleware.Format.UrlEncoded"] = require("Legado.spore.Middleware.Format.UrlEncoded")
 end
@@ -102,8 +105,39 @@ function M:isNeedLogin(response)
     return H.is_str(err_msg) and string.find(err_msg, 'NEED_LOGIN', 1, true) ~= nil
 end
 
+-- 类型1 (开源阅读 app 型) 的内置账号登录: 服务端 POST /auth/login, data 为 token 字符串。
+-- reader3 / qread 各自重写了本函数, 故此实现只服务未重写的 android_app。
 function M:reader3Login()
-    return nil, "reader3Login 函数未重写"
+    local user = self.settings.reader3_un
+    local pwd = self.settings.reader3_pwd
+    if not (H.is_str(user) and user ~= "" and H.is_str(pwd) and pwd ~= "") then
+        return false, '认证信息设置不全'
+    end
+
+    self:resetAndEnableMiddlewares(false)
+    socketutil:set_timeout(8, 12)
+
+    local status, res = errHandler.pcall(function()
+        return self.client:login({
+            user = user,
+            password = pwd,
+        })
+    end)
+    socketutil:reset_timeout()
+
+    if not status then
+        return false, res and tostring(res) or '登录请求出错'
+    end
+    if not (H.is_tbl(res) and H.is_tbl(res.body)) then
+        return false, "返回了无效数据"
+    end
+    local token = res.body.data
+    if not (H.is_str(token) and token ~= "") then
+        return false, '获取 Token 失败:' .. tostring(res.body.errorMsg or "")
+    end
+
+    self.tokenManager:set(token)
+    return true, token
 end
 
 function M:ensureLogin()
@@ -118,9 +152,11 @@ end
 
 function M:resetAndEnableMiddlewares(includeAuth)
     self.client:reset_middlewares()
-    if includeAuth and self._need_login == true then
+    if includeAuth and self._need_login == true and self._use_server_token ~= true then
         self.client:enable("Legado3Auth", { app = self })
     end
+    -- 无条件启用: 仅在 _need_login 且 _use_server_token 时才会真正追加参数 (见 ServerToken.call)
+    self.client:enable("ServerToken", { app = self })
     self.client:enable("Format.UrlEncoded")
     self.client:enable("Format.JSON")
     self.client:enable("FixJSON")
