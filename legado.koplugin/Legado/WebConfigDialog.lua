@@ -147,8 +147,8 @@ function M:openWebConfigEditorWithType(config_name, config, server_type, is_curr
             hint = "描述 (可选)",
         },}
         
-    if current_type == 2 or current_type == 3 then
-        local hint_info = current_type == 2 and "可选" or "必填"
+    if current_type == 1 or current_type == 2 or current_type == 3 then
+        local hint_info = current_type == 1 and "服务端设了访问密码则必填" or (current_type == 2 and "可选" or "必填")
         table.insert(fields, {
             text = username_input,
             hint = string.format("用户名 (%s)", hint_info),
@@ -216,7 +216,7 @@ function M:handleConfigSave(dialog, current_conf_name, old_config, server_type, 
     local user, pwd
     
     -- 根据类型获取
-    if server_type == 2 or server_type == 3 then
+    if server_type == 1 or server_type == 2 or server_type == 3 then
         user = util.trim(fields[4] or "")
         pwd = util.trim(fields[5] or "")
     end
